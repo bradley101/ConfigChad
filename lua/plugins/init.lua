@@ -12,7 +12,28 @@ return {
       require "configs.lspconfig"
     end,
   },
-
+  {
+    "rmagatti/auto-session",
+    lazy = false,
+    config = function()
+      require("auto-session").setup({
+        auto_save_enabled = true,
+        auto_restore_enabled = true,
+      })
+    end,
+  },
+  {
+    "SmiteshP/nvim-navic",
+    dependencies = "neovim/nvim-lspconfig",
+    config = function()
+      require("nvim-navic").setup({
+        highlight = true,
+        separator = " > ",
+        depth_limit = 0,
+        depth_limit_indicator = "..",
+      })
+    end,
+  }
   -- test new blink
   -- { import = "nvchad.blink.lazyspec" },
 
