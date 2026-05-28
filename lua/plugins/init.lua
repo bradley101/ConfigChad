@@ -33,7 +33,16 @@ return {
         depth_limit_indicator = "..",
       })
     end,
-  }
+  },
+  {
+    'stevearc/aerial.nvim',
+    opts = {},
+    -- Optional dependencies
+    dependencies = {
+      "nvim-treesitter/nvim-treesitter",
+      "nvim-tree/nvim-web-devicons"
+    },
+  } 
   -- test new blink
   -- { import = "nvchad.blink.lazyspec" },
 

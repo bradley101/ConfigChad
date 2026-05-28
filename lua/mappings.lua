@@ -23,3 +23,4 @@ map("n", "<leader>gr", "<cmd>Telescope lsp_references<CR>",
   { desc = "LSP References (Telescope)" })
 map("n", "<leader>tn", "<cmd>tabNext<CR>", { desc = "Go to Next Tab" })
 map("n", "<leader>tp", "<cmd>tabPrevious<CR>", { desc = "Go to Previous Tab" })
+map("n", "<leader>1", vim.lsp.buf.definition, { desc = "Go to symbol definition" })
