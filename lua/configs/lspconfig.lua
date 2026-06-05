@@ -11,7 +11,24 @@ vim.lsp.config("clangd", {
   end,
 })
 
-local servers = { "clangd" }
+-- rust-analyzer (Rust)
+vim.lsp.config("rust-analyzer", {
+  cmd = { "rust-analyzer" },
+  filetypes = { "rust" },
+  settings = {
+    ["rust-analyzer"] = {
+      cargo = {
+        allFeatures = true,
+      },
+      -- checkOnSave = {
+      --   command = "clippy",
+      -- },
+    },
+  },
+})
+
+
+local servers = { "clangd", "rust-analyzer" }
 vim.lsp.enable(servers)
 
 -- Enable winbar to show navic
