@@ -24,3 +24,12 @@ map("n", "<leader>gr", "<cmd>Telescope lsp_references<CR>",
 map("n", "<leader>tn", "<cmd>tabNext<CR>", { desc = "Go to Next Tab" })
 map("n", "<leader>tp", "<cmd>tabPrevious<CR>", { desc = "Go to Previous Tab" })
 map("n", "<leader>1", vim.lsp.buf.definition, { desc = "Go to symbol definition" })
+
+map("n", "<leader>qm", "<cmd>Telescope lsp_document_symbols symbols=method<CR>",
+    { desc = "LSP List Methods (Telescope) in File" })
+map("n", "<leader>qf", "<cmd>Telescope lsp_document_symbols symbols=function<CR>",
+    { desc = "LSP List Functions (Telescope) in File" })
+map("n", "<leader>qc", "<cmd>Telescope lsp_document_symbols symbols=class<CR>",
+    { desc = "LSP List Class (Telescope) in File" })
+map("n", "<leader>qs", "<cmd>Telescope lsp_document_symbols symbols=struct<CR>",
+    { desc = "LSP List Structs (Telescope) in File" })
