@@ -33,3 +33,7 @@ map("n", "<leader>qc", "<cmd>Telescope lsp_document_symbols symbols=class<CR>",
     { desc = "LSP List Class (Telescope) in File" })
 map("n", "<leader>qs", "<cmd>Telescope lsp_document_symbols symbols=struct<CR>",
     { desc = "LSP List Structs (Telescope) in File" })
+
+-- Telescope mappings --
+map("n", "<leader>tl", "<cmd>Telescope quickfixhistory<CR>",
+    { desc = "Telescope quickfixhistory" })
