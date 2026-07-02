@@ -37,3 +37,11 @@ map("n", "<leader>qs", "<cmd>Telescope lsp_document_symbols symbols=struct<CR>",
 -- Telescope mappings --
 map("n", "<leader>tl", "<cmd>Telescope quickfixhistory<CR>",
     { desc = "Telescope quickfixhistory" })
+
+map("n", "<leader>fb", function()
+  require("telescope.builtin").buffers({
+    sort_mru = true,
+    sort_lastused = true,
+    ignore_current_buffer = false, -- Change to true if you don't want your active file in the list
+  })
+end, { desc = "Find buffers (MRU)" })
