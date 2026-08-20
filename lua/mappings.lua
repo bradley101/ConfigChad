@@ -22,7 +22,7 @@ map("n", "gr", vim.lsp.buf.references, {})
 map("n", "<leader>gr", "<cmd>Telescope lsp_references<CR>",
   { desc = "LSP References (Telescope)" })
 map("n", "<leader>tn", "<cmd>tabNext<CR>", { desc = "Go to Next Tab" })
-map("n", "<leader>tp", "<cmd>tabPrevious<CR>", { desc = "Go to Previous Tab" })
+map("n", "<leader>tp", "<cmd>tabprevious<CR>", { desc = "Go to Previous Tab" })
 map("n", "<leader>1", vim.lsp.buf.definition, { desc = "Go to symbol definition" })
 
 map("n", "<leader>qm", "<cmd>Telescope lsp_document_symbols symbols=method<CR>",
@@ -37,6 +37,11 @@ map("n", "<leader>qs", "<cmd>Telescope lsp_document_symbols symbols=struct<CR>",
 -- Telescope mappings --
 map("n", "<leader>tl", "<cmd>Telescope quickfixhistory<CR>",
     { desc = "Telescope quickfixhistory" })
+
+map({'n', 'v', 'x'}, '<S-J>', '50j', { noremap = true })
+map({'n', 'v', 'x'}, '<S-K>', '50k', { noremap = true })
+map('n', '<S-H>', '<C-w>h', { desc = 'Move to left window' })
+map('n', '<S-L>', '<C-w>l', { desc = 'Move to right window' })
 
 map("n", "<leader>fb", function()
   require("telescope.builtin").buffers({
