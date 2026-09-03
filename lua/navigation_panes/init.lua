@@ -6,6 +6,12 @@
 -- The left pane is derived, never authoritative: it is always recomputed from
 -- getjumplist() of the right window, so it stays correct no matter how the
 -- right window moved (LSP jump, <C-o>, <C-i>, tags, search).
+--
+-- Neither pane is a workspace you can repoint. Whatever buffer arrives in the
+-- left pane by other means (`:edit` there, a telescope pick, a jump taken inside
+-- it) is what you are working on now, so it gets moved into the right pane and
+-- the left pane falls back to one step older. A buffer swapped into the right
+-- pane is simply the new current location and the left pane reflows behind it.
 
 local M = {}
 
@@ -14,6 +20,8 @@ local state = {
   right = nil,
   scratch = nil,
   last = nil, -- { bufnr, lnum } currently shown in the left pane
+  right_buf = nil, -- buffer we last put in / observed in the right pane
+  busy = false, -- true while we are the ones moving buffers around
 }
 
 local CTRL_O = vim.api.nvim_replace_termcodes("<C-o>", true, false, true)
@@ -25,6 +33,21 @@ end
 
 local function is_float(w)
   return vim.api.nvim_win_get_config(w).relative ~= ""
+end
+
+--- Run fn with the layout marked as ours, so the autocmds below ignore the
+--- window shuffling we do ourselves and only react to the user's.
+local function with_busy(fn, ...)
+  if state.busy then
+    return fn(...)
+  end
+  state.busy = true
+  local ok, res = pcall(fn, ...)
+  state.busy = false
+  if not ok then
+    error(res, 0)
+  end
+  return res
 end
 
 local function scratch_buf()
@@ -83,7 +106,7 @@ end
 --- Guarantee both panes exist. Leaves the cursor in the RIGHT pane.
 --- opts.adopt = true: if the user is currently in some unrelated window,
 --- rebuild the layout around that window instead of hijacking the old one.
-function M.ensure_layout(opts)
+local function ensure_layout(opts)
   opts = opts or {}
   local cur = vim.api.nvim_get_current_win()
 
@@ -114,11 +137,12 @@ function M.ensure_layout(opts)
   end
 
   vim.api.nvim_set_current_win(state.right)
+  state.right_buf = vim.api.nvim_win_get_buf(state.right)
   return state.left, state.right
 end
 
 --- Recompute the left pane from the right window's jumplist.
-function M.sync_left()
+local function sync_left()
   if not (win_ok(state.left) and win_ok(state.right)) then
     return
   end
@@ -127,7 +151,7 @@ function M.sync_left()
   local entry = newest_showable(list, curidx)
 
   if not entry then
-    if state.last ~= nil then
+    if state.last ~= nil or vim.api.nvim_win_get_buf(state.left) ~= scratch_buf() then
       vim.api.nvim_win_set_buf(state.left, scratch_buf())
       vim.wo[state.left].winbar = "%#Comment#  (previous) "
       state.last = nil
@@ -135,7 +159,8 @@ function M.sync_left()
     return
   end
 
-  if state.last and state.last.bufnr == entry.bufnr and state.last.lnum == entry.lnum then
+  if state.last and state.last.bufnr == entry.bufnr and state.last.lnum == entry.lnum
+    and vim.api.nvim_win_get_buf(state.left) == entry.bufnr then
     return -- already showing it
   end
 
@@ -155,34 +180,63 @@ function M.sync_left()
   state.last = { bufnr = entry.bufnr, lnum = entry.lnum }
 end
 
---- Open a location in the right pane, pushing the position we leave onto that
+--- Show a buffer in the right pane, pushing the position we leave onto that
 --- window's jumplist (that is what `m'` does), then reflow the left pane.
-function M.open_in_right(filename, lnum, col)
-  M.ensure_layout()
+--- `col` is 0-based, like nvim_win_get_cursor returns it.
+local function place_in_right(buf, lnum, col)
+  ensure_layout()
   if not win_ok(state.right) then
     return
   end
-
-  local buf = vim.fn.bufadd(filename)
-  vim.fn.bufload(buf)
-  vim.bo[buf].buflisted = true
 
   vim.api.nvim_win_call(state.right, function()
     vim.cmd("normal! m'")
   end)
 
   vim.api.nvim_win_set_buf(state.right, buf)
-  pcall(vim.api.nvim_win_set_cursor, state.right, { lnum or 1, math.max((col or 1) - 1, 0) })
+  state.right_buf = buf
+  pcall(vim.api.nvim_win_set_cursor, state.right, { lnum or 1, math.max(col or 0, 0) })
   vim.api.nvim_win_call(state.right, function()
     vim.cmd("normal! zz")
   end)
 
-  M.sync_left()
+  sync_left()
 end
 
---- <Space>1
-function M.goto_definition()
-  M.ensure_layout({ adopt = true })
+local function open_in_right(filename, lnum, col)
+  local buf = vim.fn.bufadd(filename)
+  vim.fn.bufload(buf)
+  vim.bo[buf].buflisted = true
+  place_in_right(buf, lnum, math.max((col or 1) - 1, 0))
+end
+
+--- The left pane is a viewport, not a workspace. When a buffer we did not put
+--- there shows up in it, the user went to work in the previous location, so it
+--- becomes the current one: hand the buffer to the right pane (which pushes the
+--- location it held onto the jumplist) and let the left pane fall back a step.
+local function left_is_foreign()
+  if not (win_ok(state.left) and win_ok(state.right)) then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(state.left)
+  if buf == state.scratch or vim.api.nvim_buf_get_name(buf) == "" then
+    return false
+  end
+  return not (state.last and state.last.bufnr == buf)
+end
+
+local function reclaim_left()
+  if not left_is_foreign() then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(state.left)
+  local pos = vim.api.nvim_win_get_cursor(state.left)
+  place_in_right(buf, pos[1], pos[2])
+  return true
+end
+
+local function goto_definition()
+  ensure_layout({ adopt = true })
   if not win_ok(state.right) then
     return
   end
@@ -213,7 +267,7 @@ function M.goto_definition()
 end
 
 local function step(keys)
-  M.ensure_layout()
+  ensure_layout()
   if not win_ok(state.right) then
     return
   end
@@ -224,7 +278,8 @@ local function step(keys)
     -- front keeps the key in the argument.
     pcall(vim.cmd, "normal! 1" .. keys)
   end)
-  M.sync_left()
+  state.right_buf = vim.api.nvim_win_get_buf(state.right)
+  sync_left()
 end
 
 --- True when a <C-o> in the right pane would leave the left pane with nothing
@@ -235,14 +290,12 @@ local function at_oldest()
   return newest_showable(list, curidx - 1) == nil
 end
 
---- <C-o>
----
 --- At the oldest edge of the jumplist, stepping would slide the right pane onto
 --- the location the left pane already shows and blank the left one ("no older
 --- location"). That loses the two-pane view for no gain, so instead just hand the
 --- cursor to the left pane: the location you were heading for is already there.
-function M.back()
-  M.ensure_layout()
+local function back()
+  ensure_layout()
   if not win_ok(state.right) then
     return
   end
@@ -255,23 +308,56 @@ function M.back()
   step(CTRL_O)
 end
 
---- <C-S-o>
-function M.forward()
-  step(CTRL_I)
-end
-
---- Tear the layout down, keep the right pane.
-function M.close()
+local function close()
   drop_left()
   if win_ok(state.right) then
     vim.api.nvim_set_current_win(state.right)
   end
 end
 
+-- Public API. Everything the user can trigger runs under with_busy so our own
+-- buffer moves never look like the user repointing a pane.
+function M.ensure_layout(opts)
+  return with_busy(ensure_layout, opts)
+end
+
+function M.sync_left()
+  return with_busy(sync_left)
+end
+
+function M.open_in_right(filename, lnum, col)
+  return with_busy(open_in_right, filename, lnum, col)
+end
+
+--- <Space>1
+function M.goto_definition()
+  return with_busy(goto_definition)
+end
+
+--- <C-o>
+function M.back()
+  return with_busy(back)
+end
+
+--- <C-S-o>
+function M.forward()
+  return with_busy(step, CTRL_I)
+end
+
+--- Pull a foreign buffer out of the left pane and make it the current location.
+function M.reclaim_left()
+  return with_busy(reclaim_left)
+end
+
+--- Tear the layout down, keep the right pane.
+function M.close()
+  return with_busy(close)
+end
+
 function M.setup(opts)
   opts = vim.tbl_extend("force", {
     keys = true,
-    auto_sync = true, -- keep the left pane honest after non-mapped jumps (gd, :tag, /)
+    auto_sync = true, -- track buffers/jumps the keymaps did not make (gd, :edit, telescope, :tag, /)
   }, opts or {})
 
   local grp = vim.api.nvim_create_augroup("NavigationPanes", { clear = true })
@@ -286,16 +372,29 @@ function M.setup(opts)
       end
       if w == state.right then
         state.right = nil
+        state.right_buf = nil
       end
     end,
   })
 
   if opts.auto_sync then
-    vim.api.nvim_create_autocmd({ "CursorHold", "BufWinEnter" }, {
+    vim.api.nvim_create_autocmd({ "BufWinEnter", "BufEnter", "WinEnter", "CursorHold" }, {
       group = grp,
       callback = function()
-        if win_ok(state.left) and win_ok(state.right)
-          and vim.api.nvim_get_current_win() == state.right then
+        if state.busy or not (win_ok(state.left) and win_ok(state.right)) then
+          return
+        end
+
+        -- Deferred: this fires from inside the :edit / window switch that put the
+        -- buffer there, which is no place to be moving windows around.
+        if left_is_foreign() then
+          vim.schedule(M.reclaim_left)
+          return
+        end
+
+        if vim.api.nvim_get_current_win() == state.right
+          or vim.api.nvim_win_get_buf(state.right) ~= state.right_buf then
+          state.right_buf = vim.api.nvim_win_get_buf(state.right)
           M.sync_left()
         end
       end,
