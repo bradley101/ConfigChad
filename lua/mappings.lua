@@ -23,7 +23,7 @@ map("n", "<leader>gr", "<cmd>Telescope lsp_references<CR>",
   { desc = "LSP References (Telescope)" })
 map("n", "<leader>tn", "<cmd>tabNext<CR>", { desc = "Go to Next Tab" })
 map("n", "<leader>tp", "<cmd>tabprevious<CR>", { desc = "Go to Previous Tab" })
-map("n", "<leader>1", vim.lsp.buf.definition, { desc = "Go to symbol definition" })
+-- <leader>1 / <C-o> / <C-S-o> come from the two-pane history viewport below.
 
 map("n", "<leader>qm", "<cmd>Telescope lsp_document_symbols symbols=method<CR>",
     { desc = "LSP List Methods (Telescope) in File" })
@@ -50,3 +50,9 @@ map("n", "<leader>fb", function()
     ignore_current_buffer = false, -- Change to true if you don't want your active file in the list
   })
 end, { desc = "Find buffers (MRU)" })
+
+-- Two-pane shifting history viewport: definitions open in the right pane while
+-- the left pane trails one jumplist step behind. Set up here rather than in
+-- init.lua because this file is scheduled last, so its <C-o>/<leader>1 maps win
+-- over both nvchad.mappings and lazy.nvim plugin keys.
+require("navigation_panes").setup()
