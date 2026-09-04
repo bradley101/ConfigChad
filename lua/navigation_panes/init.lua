@@ -12,6 +12,10 @@
 -- it) is what you are working on now, so it gets moved into the right pane and
 -- the left pane falls back to one step older. A buffer swapped into the right
 -- pane is simply the new current location and the left pane reflows behind it.
+--
+-- :NavPanesToggle (or :NavPanesEnable / :NavPanesDisable) switches the whole
+-- thing off: the left pane is torn down and the mappings hand <C-o>, <C-S-o>
+-- and <Space>1 straight back to Neovim, counts and all.
 
 local M = {}
 
@@ -22,6 +26,7 @@ local state = {
   last = nil, -- { bufnr, lnum } currently shown in the left pane
   right_buf = nil, -- buffer we last put in / observed in the right pane
   busy = false, -- true while we are the ones moving buffers around
+  enabled = true,
 }
 
 local CTRL_O = vim.api.nvim_replace_termcodes("<C-o>", true, false, true)
@@ -266,6 +271,12 @@ local function goto_definition()
   })
 end
 
+--- Hand a key back to Neovim untouched, count included: what the mappings do
+--- while the feature is switched off.
+local function native_key(keys)
+  pcall(vim.cmd, "normal! " .. vim.v.count1 .. keys)
+end
+
 local function step(keys)
   ensure_layout()
   if not win_ok(state.right) then
@@ -315,6 +326,18 @@ local function close()
   end
 end
 
+--- Switch the viewport on or off. Off tears the left pane down and forgets the
+--- layout, so turning it back on adopts whatever window you are in next.
+local function set_enabled(on)
+  on = on and true or false
+  if state.enabled and not on then
+    close()
+    state.right = nil
+    state.right_buf = nil
+  end
+  state.enabled = on
+end
+
 -- Public API. Everything the user can trigger runs under with_busy so our own
 -- buffer moves never look like the user repointing a pane.
 function M.ensure_layout(opts)
@@ -322,6 +345,9 @@ function M.ensure_layout(opts)
 end
 
 function M.sync_left()
+  if not state.enabled then
+    return
+  end
   return with_busy(sync_left)
 end
 
@@ -331,22 +357,52 @@ end
 
 --- <Space>1
 function M.goto_definition()
+  if not state.enabled then
+    return vim.lsp.buf.definition()
+  end
   return with_busy(goto_definition)
 end
 
 --- <C-o>
 function M.back()
+  if not state.enabled then
+    return native_key(CTRL_O)
+  end
   return with_busy(back)
 end
 
 --- <C-S-o>
 function M.forward()
+  if not state.enabled then
+    return native_key(CTRL_I)
+  end
   return with_busy(step, CTRL_I)
 end
 
 --- Pull a foreign buffer out of the left pane and make it the current location.
 function M.reclaim_left()
+  if not state.enabled then
+    return
+  end
   return with_busy(reclaim_left)
+end
+
+function M.enabled()
+  return state.enabled
+end
+
+--- :NavPanesEnable / :NavPanesDisable / :NavPanesToggle
+function M.set_enabled(on, quiet)
+  local was = state.enabled
+  with_busy(set_enabled, on)
+  if not quiet and was ~= state.enabled then
+    vim.notify("navigation_panes: " .. (state.enabled and "enabled" or "disabled"), vim.log.levels.INFO)
+  end
+  return state.enabled
+end
+
+function M.toggle()
+  return M.set_enabled(not state.enabled)
 end
 
 --- Tear the layout down, keep the right pane.
@@ -357,8 +413,11 @@ end
 function M.setup(opts)
   opts = vim.tbl_extend("force", {
     keys = true,
+    enabled = true, -- start switched on; :NavPanesToggle flips it at runtime
     auto_sync = true, -- track buffers/jumps the keymaps did not make (gd, :edit, telescope, :tag, /)
   }, opts or {})
+
+  state.enabled = opts.enabled and true or false
 
   local grp = vim.api.nvim_create_augroup("NavigationPanes", { clear = true })
 
@@ -381,6 +440,9 @@ function M.setup(opts)
     vim.api.nvim_create_autocmd({ "BufWinEnter", "BufEnter", "WinEnter", "CursorHold" }, {
       group = grp,
       callback = function()
+        if not state.enabled then
+          return
+        end
         if state.busy or not (win_ok(state.left) and win_ok(state.right)) then
           return
         end
@@ -409,8 +471,18 @@ function M.setup(opts)
     map("n", "<Space>2", M.forward, { silent = true, desc = "History forward (fallback)" })
   end
 
-  vim.api.nvim_create_user_command("NavPanesClose", M.close, {})
-  vim.api.nvim_create_user_command("NavPanesSync", M.sync_left, {})
+  local cmd = vim.api.nvim_create_user_command
+  cmd("NavPanesClose", M.close, { desc = "Close the previous pane, keep the current one" })
+  cmd("NavPanesSync", M.sync_left, { desc = "Recompute the previous pane" })
+  cmd("NavPanesToggle", function()
+    M.toggle()
+  end, { desc = "Toggle the two-pane history viewport" })
+  cmd("NavPanesEnable", function()
+    M.set_enabled(true)
+  end, { desc = "Enable the two-pane history viewport" })
+  cmd("NavPanesDisable", function()
+    M.set_enabled(false)
+  end, { desc = "Disable it: <C-o>/<C-S-o>/<Space>1 go back to their native behaviour" })
 
   return M
 end
